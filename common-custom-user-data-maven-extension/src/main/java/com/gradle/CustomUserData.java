@@ -15,6 +15,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
@@ -32,6 +33,7 @@ final class CustomUserData {
         addMavenVersion(buildScan);
         addCiMetadata(buildScan);
         addGitMetadata(buildScan);
+        addPerfoceMetadata(buildScan);
     }
 
     private static void tagOs(BuildScanApi buildScan) {
@@ -184,6 +186,43 @@ final class CustomUserData {
                 String stageName = envVariable("CI_JOB_STAGE");
                 buildScan.value(stageNameLabel, stageName);
                 addCustomLinkWithSearchTerms(buildScan, "CI stage build scans", ImmutableMap.of(stageNameLabel, stageName));
+            }
+        }
+    }
+
+    private static void addPerfoceMetadata(BuildScanApi buildScan) {
+        buildScan.background(api -> {
+            if (!isPerforceInstalled()) {
+                return;
+            }
+
+            String perforceChangelist = execAndGetStdOut("p4","changes","-m1","...#have").split(" ")[1];
+            String perforceBranchName = execAndGetStdOut("p4", "where").split(" ")[0];
+
+            if (perforceChangelist != null) {
+                String perforceChangelistLabel = "Perforce Changelist";
+                api.value(perforceChangelistLabel, perforceChangelist);
+                addCustomLinkWithSearchTerms(api, "Perforce cl build scans", ImmutableMap.of(perforceChangelistLabel, perforceChangelist));
+            }
+            if (perforceBranchName != null) {
+                api.tag(perforceBranchName);
+                api.value("Perforce branch", perforceBranchName);
+            }
+        });
+    }
+
+    private static boolean isPerforceInstalled() {
+        Runtime runtime = Runtime.getRuntime();
+        Process process = null;
+        try {
+            process = runtime.exec(new String[]{"p4"});
+            boolean finished = process.waitFor(10, TimeUnit.SECONDS);
+            return finished && process.exitValue() == 0;
+        } catch (IOException | InterruptedException ignored) {
+            return false;
+        } finally {
+            if (process != null) {
+                process.destroyForcibly();
             }
         }
     }
