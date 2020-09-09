@@ -23,7 +23,6 @@ if (!buildScanApi) {
 tagOs()
 tagIde()
 tagCiOrLocal()
-addGradleVersion()
 addCiMetadata()
 addGitMetadata()
 addTestParallelization()
@@ -39,6 +38,9 @@ void tagOs() {
 void tagIde() {
     if (project.hasProperty('android.injected.invoked.from.ide')) {
         buildScan.tag 'Android Studio'
+        if (project.hasProperty('android.injected.studio.version')) {
+            buildScan.value 'Android Studio version', project.getProperty('android.injected.studio.version')
+        }
     } else if (System.getProperty('idea.version')) {
         buildScan.tag 'IntelliJ IDEA'
     } else if (System.getProperty('eclipse.buildId')) {
@@ -50,10 +52,6 @@ void tagIde() {
 
 void tagCiOrLocal() {
     buildScan.tag isCi() ? 'CI' : 'LOCAL'
-}
-
-void addGradleVersion() {
-    buildScan.value 'Gradle version', org.gradle.util.GradleVersion.current().version
 }
 
 void addCiMetadata() {
@@ -185,6 +183,27 @@ void addCiMetadata() {
             addCustomLinkWithSearchTerms buildScan, 'CI stage build scans', [(stageNameLabel): stageName]
         }
     }
+
+    if (isTravis()) {
+        if (System.getenv('TRAVIS_BUILD_WEB_URL')) {
+            buildScan.link 'TRAVIS build', System.getenv('TRAVIS_BUILD_WEB_URL')
+        }
+        if (System.getenv('TRAVIS_BUILD_NUMBER')) {
+            buildScan.value 'TRAVIS build number', System.getenv('TRAVIS_BUILD_NUMBER')
+        }
+        if (System.getenv('TRAVIS_EVENT_TYPE')) {
+            buildScan.tag System.getenv('TRAVIS_EVENT_TYPE')
+        }
+        if (System.getenv('TRAVIS_TAG')) {
+            buildScan.value 'TRAVIS tag', System.getenv('TRAVIS_TAG')
+        }
+        if (System.getenv('TRAVIS_JOB_NAME')) {
+            def jobNameLabel = 'TRAVIS job'
+            def jobName = System.getenv('TRAVIS_JOB_NAME')
+            buildScan.value jobNameLabel, jobName
+            addCustomLinkWithSearchTerms buildScan, 'TRAVIS job build scans', [(jobNameLabel): jobName]
+        }
+    }
 }
 
 void addGitMetadata() {
@@ -241,7 +260,7 @@ void addTestSystemProperties() {
 }
 
 boolean isCi() {
-    isJenkins() || isTeamCity() || isCircleCI() || isBamboo() || isGitHubActions() || isGitLab()
+    isJenkins() || isTeamCity() || isCircleCI() || isBamboo() || isGitHubActions() || isGitLab() || isTravis()
 }
 
 boolean isJenkins() {
@@ -266,6 +285,10 @@ boolean isGitHubActions() {
 
 boolean isGitLab() {
     System.getenv('GITLAB_CI')
+}
+
+boolean isTravis() {
+    System.getenv('TRAVIS_JOB_ID')
 }
 
 boolean isGitInstalled() {
@@ -300,7 +323,7 @@ void addCustomLinkWithSearchTerms(def buildScan, String title, Map<String, Strin
     // This fails with Build Scan plugin v1.16.
     // As a workaround, you can specify the BuildScan server URL directly: e.g. `def server = "http://localhost"`
     def server = buildScan.server
-    
+
     if (server) {
         String searchParams = customValueSearchParams(search);
         String url = "${appendIfMissing(server, '/')}scans?$searchParams#selection.buildScanB=${urlEncode('{SCAN_ID}')}"

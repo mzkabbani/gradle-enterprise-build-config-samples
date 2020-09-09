@@ -30,7 +30,6 @@ final class CustomUserData {
         tagOs(buildScan);
         tagIde(buildScan);
         tagCiOrLocal(buildScan);
-        addMavenVersion(buildScan);
         addCiMetadata(buildScan);
         addGitMetadata(buildScan);
         addPerfoceMetadata(buildScan);
@@ -41,7 +40,7 @@ final class CustomUserData {
     }
 
     private static void tagIde(BuildScanApi buildScan) {
-        if (sysPropertyPresent("idea.version")) {
+        if (sysPropertyPresent("idea.version") || sysPropertyKeyStartingWith("idea.version")) {
             buildScan.tag("IntelliJ IDEA");
         } else if (sysPropertyPresent("eclipse.buildId")) {
             buildScan.tag("Eclipse");
@@ -52,11 +51,6 @@ final class CustomUserData {
 
     private static void tagCiOrLocal(BuildScanApi buildScan) {
         buildScan.tag(isCi() ? "CI" : "LOCAL");
-    }
-
-    private static void addMavenVersion(BuildScanApi buildScan) {
-        Properties buildProperties = readBuildPropertiesFile();
-        buildScan.value("Maven version", buildProperties.getProperty("version"));
     }
 
     private static void addCiMetadata(BuildScanApi buildScan) {
@@ -188,6 +182,27 @@ final class CustomUserData {
                 addCustomLinkWithSearchTerms(buildScan, "CI stage build scans", ImmutableMap.of(stageNameLabel, stageName));
             }
         }
+
+        if (isTravis()) {
+            if (envVariablePresent("TRAVIS_BUILD_WEB_URL")) {
+                buildScan.link("TRAVIS build", envVariable("TRAVIS_BUILD_WEB_URL"));
+            }
+            if (envVariablePresent("TRAVIS_BUILD_NUMBER")) {
+                buildScan.value("TRAVIS build number", envVariable("TRAVIS_BUILD_NUMBER"));
+            }
+            if (envVariablePresent("TRAVIS_EVENT_TYPE")) {
+                buildScan.tag(envVariable("TRAVIS_EVENT_TYPE"));
+            }
+            if (envVariablePresent("TRAVIS_TAG")) {
+                buildScan.value("TRAVIS tag", envVariable("TRAVIS_TAG"));
+            }
+            if (envVariablePresent("TRAVIS_JOB_NAME")) {
+                String jobNameLabel = "TRAVIS job";
+                String jobName = envVariable("TRAVIS_JOB_NAME");
+                buildScan.value(jobNameLabel, jobName);
+                addCustomLinkWithSearchTerms(buildScan, "TRAVIS job build scans", ImmutableMap.of(jobNameLabel, jobName));
+            }
+        }
     }
 
     private static void addPerfoceMetadata(BuildScanApi buildScan) {
@@ -256,7 +271,7 @@ final class CustomUserData {
                         if (matcher.matches()) {
                             String rawRepoPath = matcher.group(2);
                             String repoPath = rawRepoPath.endsWith(".git") ? rawRepoPath.substring(0, rawRepoPath.length() - 4) : rawRepoPath;
-                            api.link("GitLab Source", "https://gitlab.com/$repoPath/-/commit/$gitCommitId");
+                            api.link("GitLab Source", "https://gitlab.com/" + repoPath + "/-/commit/" + gitCommitId);
                         }
                     }
                 }
@@ -273,7 +288,7 @@ final class CustomUserData {
     }
 
     private static boolean isCi() {
-        return isJenkins() || isTeamCity() || isCircleCI() || isBamboo() || isGitHubActions() || isGitLab();
+        return isJenkins() || isTeamCity() || isCircleCI() || isBamboo() || isGitHubActions() || isGitLab() || isTravis();
     }
 
     private static boolean isJenkins() {
@@ -298,6 +313,10 @@ final class CustomUserData {
 
     private static boolean isGitLab() {
         return envVariablePresent("GITLAB_CI");
+    }
+
+    private static boolean isTravis() {
+        return envVariablePresent("TRAVIS_JOB_ID");
     }
 
     private static boolean isGitInstalled() {
@@ -365,6 +384,18 @@ final class CustomUserData {
         return !Strings.isNullOrEmpty(sysProperty(name));
     }
 
+    private static boolean sysPropertyKeyStartingWith(String keyPrefix) {
+        for (Object key : System.getProperties().keySet()) {
+            if (key instanceof String) {
+                String stringKey = (String) key;
+                if (stringKey.startsWith(keyPrefix)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static String envVariable(String name) {
         return System.getenv(name);
     }
@@ -393,18 +424,6 @@ final class CustomUserData {
         try (InputStream input = new FileInputStream(name)) {
             Properties properties = new Properties();
             properties.load(input);
-            return properties;
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static Properties readBuildPropertiesFile() {
-        try (InputStream input = Maven.class.getResourceAsStream("/org/apache/maven/messages/build.properties")) {
-            Properties properties = new Properties();
-            if (input != null) {
-                properties.load(input);
-            }
             return properties;
         } catch (IOException e) {
             throw new RuntimeException(e);
